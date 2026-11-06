@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100 dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CNN en Español - Live Stream Player</title>
+  
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            cnn: '#CC0000',
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- HLS.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+    
+    /* Range Slider Styling */
+    input[type=range] {
+      -webkit-appearance: none;
+      background: transparent;
+    }
+    input[type=range]:focus {
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 6px;
+      cursor: pointer;
+      background: #334155;
+      border-radius: 9999px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      height: 14px;
+      width: 14px;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      -webkit-appearance: none;
+      margin-top: -4px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    input[type=range]::-moz-range-track {
+      width: 100%;
+      height: 6px;
+      cursor: pointer;
+      background: #334155;
+      border-radius: 9999px;
+    }
+    input[type=range]::-moz-range-thumb {
+      height: 14px;
+      width: 14px;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+
+    /* Video overlay control fade animations */
+    .controls-overlay {
+      transition: opacity 0.3s ease;
+    }
+    .video-container:hover .controls-overlay {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100 selection:bg-red-600 selection:text-white">
+
+  <!-- Header Header Nav -->
+  <header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="bg-cnn text-white font-black text-xl px-2.5 py-1 rounded tracking-tighter shadow-lg shadow-red-900/30">
+          CNN
+        </div>
+        <div class="h-5 w-px bg-slate-800"></div>
+        <span class="font-semibold tracking-wide text-slate-200 text-sm sm:text-base">en Español <span class="text-xs font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full ml-1">EN VIVO</span></span>
+      </div>
+      
+      <!-- Right Status pill -->
+      <div class="flex items-center space-x-3 text-xs sm:text-sm">
+        <div class="flex items-center gap-2 bg-slate-800/60 border border-slate-700/50 px-3 py-1.5 rounded-full">
+          <span class="relative flex h-2.5 w-2.5">
+            <span id="ping-indicator" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span id="dot-indicator" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+          </span>
+          <span id="stream-status-text" class="font-medium text-slate-300">Conectando...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+    
+    <!-- Player Wrapper -->
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      
+      <!-- Primary Video Column (3 cols on LG) -->
+      <div class="lg:col-span-3 flex flex-col gap-4">
+        
+        <!-- Video Canvas Box -->
+        <div id="player-container" class="video-container relative w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group select-none">
+          
+          <!-- HTML5 Video Tag -->
+          <video 
+            id="video" 
+            class="w-full h-full object-contain"
+            playsinline
+            autoplay
+          ></video>
+
+          <!-- Spinner / Loading State -->
+          <div id="loader" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm z-20 transition-opacity duration-300">
+            <div class="w-12 h-12 border-4 border-red-600/20 border-t-red-600 rounded-full animate-spin mb-3"></div>
+            <p class="text-sm font-medium text-slate-300">Cargando transmisión en vivo...</p>
+          </div>
+
+          <!-- Error Alert State -->
+          <div id="error-screen" class="hidden absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 z-30 p-6 text-center">
+            <div class="w-16 h-16 bg-red-950/50 border border-red-800/50 rounded-full flex items-center justify-center text-red-500 mb-4 text-2xl">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-100 mb-1">Error al reproducir el video</h3>
+            <p id="error-message" class="text-sm text-slate-400 max-w-md mb-4">No se pudo cargar la fuente HLS manifest.</p>
+            <button onclick="retryStream()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
+              <i class="fa-solid fa-rotate-right"></i> Reintentar
+            </button>
+          </div>
+
+          <!-- Unmute Big Badge Prompt (Browsers Autoplay policy workaround) -->
+          <button id="unmute-overlay" onclick="toggleMute()" class="hidden absolute top-4 left-4 z-20 bg-slate-900/90 hover:bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 backdrop-blur-md shadow-lg transition-all">
+            <i class="fa-solid fa-volume-xmark text-red-400"></i> Video silenciado. Haz clic para activar sonido.
+          </button>
+
+          <!-- Floating Live Badge Overlay -->
+          <div class="absolute top-4 right-4 z-10 flex items-center gap-2">
+            <div class="bg-red-600/90 text-white text-xs font-bold px-2.5 py-1 rounded-md uppercase tracking-wider shadow-md backdrop-blur-sm flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span> EN VIVO
+            </div>
+          </div>
+
+          <!-- Controls Overlay Overlay -->
+          <div id="controls-overlay" class="controls-overlay opacity-0 group-hover:opacity-100 absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent flex flex-col justify-end p-4 z-20">
+            
+            <!-- Bottom Control Bar -->
+            <div class="flex flex-col gap-3">
+              
+              <!-- Action buttons row -->
+              <div class="flex items-center justify-between">
+                
+                <!-- Left Play & Volume Controls -->
+                <div class="flex items-center space-x-3 sm:space-x-4">
+                  
+                  <!-- Play / Pause Button -->
+                  <button id="btn-play-pause" onclick="togglePlay()" class="text-slate-200 hover:text-white focus:outline-none transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10" title="Play / Pausa">
+                    <i class="fa-solid fa-pause text-xl"></i>
+                  </button>
+
+                  <!-- Live Sync Jump Button -->
+                  <button id="btn-live-sync" onclick="syncToLive()" class="text-red-500 hover:text-red-400 text-xs font-bold px-2 py-1 rounded bg-red-950/40 border border-red-800/40 flex items-center gap-1 transition-all" title="Ir al directo">
+                    <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> DIRECTO
+                  </button>
+
+                  <!-- Mute & Volume Group -->
+                  <div class="flex items-center space-x-2 group/vol">
+                    <button id="btn-mute" onclick="toggleMute()" class="text-slate-200 hover:text-white focus:outline-none transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10">
+                      <i id="icon-mute" class="fa-solid fa-volume-high text-lg"></i>
+                    </button>
+                    <input 
+                      id="volume-slider" 
+                      type="range" 
+                      min="0" 
+                      max="1" 
+                      step="0.05" 
+                      value="1" 
+                      oninput="setVolume(this.value)"
+                      class="w-16 sm:w-24 accent-red-600"
+                      title="Volumen"
+                    >
+                  </div>
+
+                </div>
+
+                <!-- Right Quality & Fullscreen Controls -->
+                <div class="flex items-center space-x-2 sm:space-x-3">
+                  
+                  <!-- Stream Quality Selector Dropdown -->
+                  <div class="relative">
+                    <select 
+                      id="quality-selector" 
+                      onchange="changeQuality(this.value)" 
+                      class="bg-slate-900/90 text-slate-200 border border-slate-700 text-xs font-medium rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-slate-500 cursor-pointer backdrop-blur-md"
+                    >
+                      <option value="-1">Calidad: Auto</option>
+                    </select>
+                  </div>
+
+                  <!-- Fullscreen Button -->
+                  <button onclick="toggleFullscreen()" class="text-slate-200 hover:text-white focus:outline-none transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10" title="Pantalla Completa">
+                    <i class="fa-solid fa-expand text-lg"></i>
+                  </button>
+
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Meta info banner below player -->
+        <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0">
+              <i class="fa-solid fa-tv text-lg"></i>
+            </div>
+            <div>
+              <h1 class="text-base font-semibold text-slate-100">CNN en Español (Señal Internacional)</h1>
+              <p class="text-xs text-slate-400">Emisión en vivo de noticias en castellano 24/7 vía Amagi Cloud CDN</p>
+            </div>
+          </div>
+          
+          <button onclick="copyStreamURL()" class="w-full sm:w-auto px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg border border-slate-700/60 transition-colors flex items-center justify-center gap-2">
+            <i class="fa-regular fa-copy"></i> Copiar URL de origen
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Right Sidebar: Diagnostics & Channel Information (1 col) -->
+      <div class="flex flex-col gap-4">
+        
+        <!-- Stream Diagnostics Card -->
+        <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <i class="fa-solid fa-chart-simple text-red-500"></i> Estadísticas HLS
+            </h2>
+            <span id="stat-codec" class="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-mono">H.264 / AAC</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+              <span class="text-slate-500 block text-[10px] uppercase">Resolución</span>
+              <span id="stat-resolution" class="font-mono font-semibold text-slate-200">Detectando...</span>
+            </div>
+            <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+              <span class="text-slate-500 block text-[10px] uppercase">Tasa de bits</span>
+              <span id="stat-bitrate" class="font-mono font-semibold text-slate-200">-- Mbps</span>
+            </div>
+            <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+              <span class="text-slate-500 block text-[10px] uppercase">Buffer Salud</span>
+              <span id="stat-buffer" class="font-mono font-semibold text-slate-200">0.0 s</span>
+            </div>
+            <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60">
+              <span class="text-slate-500 block text-[10px] uppercase">Cuadros Perdidos</span>
+              <span id="stat-dropped" class="font-mono font-semibold text-slate-200">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Technical Manifest Summary -->
+        <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
+          <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2 flex items-center gap-2">
+            <i class="fa-solid fa-server text-red-500"></i> Servidor CDN
+          </h2>
+          
+          <div class="text-xs space-y-2 text-slate-300">
+            <div class="flex justify-between py-1 border-b border-slate-800/40">
+              <span class="text-slate-500">Proveedor CDN:</span>
+              <span class="font-medium text-slate-200">Amagi TV Playout</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-slate-800/40">
+              <span class="text-slate-500">Protocolo:</span>
+              <span class="font-medium text-slate-200">Apple HLS (v3)</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-slate-800/40">
+              <span class="text-slate-500">Tipo de emisión:</span>
+              <span class="font-medium text-slate-200">Ventana Móvil Live</span>
+            </div>
+            <div class="flex justify-between py-1">
+              <span class="text-slate-500">Cifrado DRM:</span>
+              <span class="font-medium text-emerald-400">Ninguno (Libre)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notification Toast Box -->
+        <div id="toast" class="hidden transition-all duration-300 bg-slate-800 border border-slate-700 text-slate-200 text-xs p-3 rounded-lg flex items-center gap-2">
+          <i class="fa-solid fa-circle-check text-emerald-400"></i>
+          <span id="toast-text">Notificación</span>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800/80 bg-slate-950 py-4 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <p>© CNN y todas las marcas registradas pertenecen a Warner Bros. Discovery. Se muestra con fines demostrativos.</p>
+      <p class="text-slate-600">Procesado con HLS.js Engine</p>
+    </div>
+  </footer>
+
+  <!-- Embedded Logic JavaScript -->
+  <script>
+    // Stream Target Endpoint
+    const STREAM_URL = 'https://amg00803-cnnfast-amg00803c3-lg-es-5477.playouts.now.amagi.tv/playlist.m3u8';
+
+    // UI Elements References
+    const video = document.getElementById('video');
+    const loader = document.getElementById('loader');
+    const errorScreen = document.getElementById('error-screen');
+    const errorMessage = document.getElementById('error-message');
+    const qualitySelector = document.getElementById('quality-selector');
+    const btnPlayPause = document.getElementById('btn-play-pause');
+    const btnMute = document.getElementById('btn-mute');
+    const iconMute = document.getElementById('icon-mute');
+    const volumeSlider = document.getElementById('volume-slider');
+    const unmuteOverlay = document.getElementById('unmute-overlay');
+    const streamStatusText = document.getElementById('stream-status-text');
+    const pingIndicator = document.getElementById('ping-indicator');
+    const dotIndicator = document.getElementById('dot-indicator');
+
+    // Stats Elements
+    const statResolution = document.getElementById('stat-resolution');
+    const statBitrate = document.getElementById('stat-bitrate');
+    const statBuffer = document.getElementById('stat-buffer');
+    const statDropped = document.getElementById('stat-dropped');
+
+    let hls = null;
+    let statsInterval = null;
+
+    // Initialize Video Application on Window Load
+    window.onload = function() {
+      initPlayer();
+    };
+
+    function initPlayer() {
+      // Show Loader
+      loader.classList.remove('hidden');
+      errorScreen.classList.add('hidden');
+
+      if (Hls.isSupported()) {
+        const config = {
+          debug: false,
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 30
+        };
+
+        if (hls) {
+          hls.destroy();
+        }
+
+        hls = new Hls(config);
+        hls.loadSource(STREAM_URL);
+        hls.attachMedia(video);
+
+        // HLS Event Handlers
+        hls.on(Hls.Events.MANIFEST_PARSED, function(event, data) {
+          loader.classList.add('hidden');
+          updateStatus('En vivo', 'online');
+          populateQualityLevels(data.levels);
+          
+          // Attempt Autoplay
+          video.play().catch(function(err) {
+            console.log("Autoplay con sonido bloqueado. Iniciando silenciado.");
+            video.muted = true;
+            updateMuteUI();
+            unmuteOverlay.classList.remove('hidden');
+            video.play();
+          });
+        });
+
+        hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
+          const level = hls.levels[data.level];
+          if (level) {
+            statResolution.textContent = `${level.width}x${level.height}`;
+            statBitrate.textContent = `${(level.bitrate / 1000000).toFixed(2)} Mbps`;
+          }
+        });
+
+        hls.on(Hls.Events.ERROR, function(event, data) {
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.error("Error fatal de red:", data);
+                hls.startLoad();
+                showError("No se pudo conectar al servidor CDN de transmisión.");
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.error("Error fatal de medios:", data);
+                hls.recoverMediaError();
+                break;
+              default:
+                console.error("Error no recuperable:", data);
+                hls.destroy();
+                showError("Error crítico al reproducir el flujo HLS.");
+                break;
+            }
+          }
+        });
+
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Native HLS Fallback for Safari / iOS
+        video.src = STREAM_URL;
+        video.addEventListener('loadedmetadata', function() {
+          loader.classList.add('hidden');
+          updateStatus('En vivo (Nativo)', 'online');
+          video.play();
+        });
+        video.addEventListener('error', function() {
+          showError("Error al reproducir el formato nativo HLS.");
+        });
+      } else {
+        loader.classList.add('hidden');
+        showError("Tu navegador no soporta reproducción HLS.");
+      }
+
+      startDiagnosticsLoop();
+    }
+
+    // Populate Dynamic Quality Selector Dropdown
+    function populateQualityLevels(levels) {
+      qualitySelector.innerHTML = '<option value="-1">Calidad: Auto</option>';
+      levels.forEach((level, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        const resLabel = level.height ? `${level.height}p` : `${(level.bitrate / 1000).toFixed(0)} kbps`;
+        option.textContent = resLabel;
+        qualitySelector.appendChild(option);
+      });
+    }
+
+    // Change Bitrate Quality manually or Auto
+    function changeQuality(levelIndex) {
+      if (!hls) return;
+      hls.currentLevel = parseInt(levelIndex, 10);
+      showToast(levelIndex === "-1" ? "Calidad establecida en Automático" : `Nivel de calidad cambiado`);
+    }
+
+    // Playback Controls logic
+    function togglePlay() {
+      if (video.paused) {
+        video.play();
+        btnPlayPause.innerHTML = '<i class="fa-solid fa-pause text-xl"></i>';
+      } else {
+        video.pause();
+        btnPlayPause.innerHTML = '<i class="fa-solid fa-play text-xl"></i>';
+      }
+    }
+
+    function toggleMute() {
+      video.muted = !video.muted;
+      updateMuteUI();
+      if (!video.muted) {
+        unmuteOverlay.classList.add('hidden');
+      }
+    }
+
+    function updateMuteUI() {
+      if (video.muted || video.volume === 0) {
+        iconMute.className = 'fa-solid fa-volume-xmark text-lg text-red-400';
+        volumeSlider.value = 0;
+      } else if (video.volume < 0.5) {
+        iconMute.className = 'fa-solid fa-volume-low text-lg text-slate-200';
+        volumeSlider.value = video.volume;
+      } else {
+        iconMute.className = 'fa-solid fa-volume-high text-lg text-slate-200';
+        volumeSlider.value = video.volume;
+      }
+    }
+
+    function setVolume(val) {
+      video.volume = parseFloat(val);
+      video.muted = (val == 0);
+      updateMuteUI();
+      if (val > 0) unmuteOverlay.classList.add('hidden');
+    }
+
+    function syncToLive() {
+      if (video.seekable.length > 0) {
+        video.currentTime = video.seekable.end(video.seekable.length - 1);
+        showToast("Sincronizado al directo");
+      }
+    }
+
+    function toggleFullscreen() {
+      const container = document.getElementById('player-container');
+      if (!document.fullscreenElement) {
+        if (container.requestFullscreen) {
+          container.requestFullscreen();
+        } else if (container.webkitRequestFullscreen) {
+          container.webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    // Diagnostics Telemetry Timer
+    function startDiagnosticsLoop() {
+      if (statsInterval) clearInterval(statsInterval);
+      
+      statsInterval = setInterval(() => {
+        if (!video) return;
+
+        // Buffer calculation
+        if (video.buffered.length > 0) {
+          const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+          const duration = video.currentTime;
+          const bufferLen = Math.max(0, bufferedEnd - duration);
+          statBuffer.textContent = `${bufferLen.toFixed(1)} s`;
+        }
+
+        // Dropped Frames stats
+        if (video.getVideoPlaybackQuality) {
+          const quality = video.getVideoPlaybackQuality();
+          statDropped.textContent = quality.droppedVideoFrames;
+        }
+      }, 1000);
+    }
+
+    // Helper UI functions
+    function updateStatus(text, state) {
+      streamStatusText.textContent = text;
+      if (state === 'online') {
+        dotIndicator.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500';
+        pingIndicator.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75';
+      } else {
+        dotIndicator.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500';
+        pingIndicator.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75';
+      }
+    }
+
+    function showError(msg) {
+      loader.classList.add('hidden');
+      errorScreen.classList.remove('hidden');
+      errorMessage.textContent = msg;
+      updateStatus('Error', 'offline');
+    }
+
+    function retryStream() {
+      initPlayer();
+    }
+
+    function copyStreamURL() {
+      // ExecCommand fallback for iframe clipboard restrictions
+      const dummy = document.createElement('input');
+      document.body.appendChild(dummy);
+      dummy.value = STREAM_URL;
+      dummy.select();
+      document.execCommand('copy');
+      document.body.removeChild(dummy);
+      showToast("URL copiada al portapapeles");
+    }
+
+    function showToast(text) {
+      const toast = document.getElementById('toast');
+      const toastText = document.getElementById('toast-text');
+      toastText.textContent = text;
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
